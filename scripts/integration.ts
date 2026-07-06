@@ -20,8 +20,37 @@ import { Broadcaster } from "../src/lib/broadcaster.ts";
 import { createStore } from "../src/lib/store.ts";
 import { loadConfig } from "../src/core/config.ts";
 
+/**
+ * Poll the Firestore emulator's REST endpoint until it answers, logging the
+ * raw diagnostic on each miss. The emulator can take a moment after "started"
+ * before its REST surface accepts requests, so we retry rather than fail on the
+ * first probe.
+ */
+async function waitForEmulator(host: string, projectId: string, attempts = 30): Promise<void> {
+  const url =
+    `http://${host}/v1/projects/${projectId}/databases/(default)/documents/__healthcheck__?pageSize=1`;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(url, { headers: { authorization: "Bearer owner" } });
+      // Any HTTP answer (even 4xx) proves the emulator is up and routing.
+      if (res.status < 500) {
+        console.log(`[integration] emulator answered on attempt ${i} (HTTP ${res.status})`);
+        return;
+      }
+      console.log(`[integration] attempt ${i}: HTTP ${res.status}, retrying…`);
+    } catch (err) {
+      console.log(`[integration] attempt ${i}: ${(err as Error).message}, retrying…`);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`Firestore emulator at ${host} never became reachable`);
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
+
+  // Wait for the emulator's REST endpoint to come up before we assert on it.
+  await waitForEmulator(config.firestoreEmulatorHost, config.projectId);
 
   // Force the Firestore-backed store; if the emulator is down this throws and
   // the integration test correctly fails.
