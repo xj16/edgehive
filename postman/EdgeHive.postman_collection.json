@@ -1,0 +1,171 @@
+{
+  "info": {
+    "name": "EdgeHive API",
+    "description": "Edge-native realtime API for Bun, Deno & Firebase. Import this collection, run 'Login' first (it auto-saves the bearer token to the `token` collection variable), then exercise the CRUD + realtime routes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8787", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "collection", "value": "todos", "type": "string" },
+    { "key": "docId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Service banner",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/", "host": ["{{baseUrl}}"], "path": [""] }
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Login (mint token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.token) {",
+              "  pm.collectionVariables.set('token', body.token);",
+              "  console.log('Saved token to collection variable.');",
+              "}",
+              "pm.test('got a token', () => pm.expect(body.token).to.be.a('string'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"dev@edgehive.test\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "Who am I (protected)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+      }
+    },
+    {
+      "name": "Create document (protected)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('docId', body.id);",
+              "pm.test('created', () => pm.expect(pm.response.code).to.eql(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Ship EdgeHive\",\n  \"done\": false,\n  \"priority\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}"]
+        }
+      }
+    },
+    {
+      "name": "List documents",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}"]
+        }
+      }
+    },
+    {
+      "name": "Get one document",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}/{{docId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}", "{{docId}}"]
+        }
+      }
+    },
+    {
+      "name": "Upsert document (protected)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Ship EdgeHive\",\n  \"done\": true,\n  \"priority\": 2\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}/{{docId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}", "{{docId}}"]
+        }
+      }
+    },
+    {
+      "name": "Delete document (protected)",
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}/{{docId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}", "{{docId}}"]
+        }
+      }
+    },
+    {
+      "name": "Realtime SSE stream",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "text/event-stream" }],
+        "url": {
+          "raw": "{{baseUrl}}/v1/{{collection}}/stream",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "{{collection}}", "stream"]
+        },
+        "description": "Server-Sent Events stream. Keep this open in one tab, then create/update/delete documents from another to watch change events arrive live."
+      }
+    }
+  ]
+}

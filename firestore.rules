@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// EdgeHive Firestore security rules.
+//
+// EdgeHive's HTTP layer performs its own bearer-token authorization before it
+// ever touches Firestore, and against the emulator it connects as an admin
+// ("owner") principal. These rules therefore describe the intended posture for
+// a REAL Firebase deployment where clients might also read directly:
+//
+//   * Anyone may read documents (public realtime feed).
+//   * Only authenticated principals may write.
+//
+// Tighten these before pointing EdgeHive at a production project.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{collection}/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

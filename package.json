@@ -1,0 +1,44 @@
+{
+  "name": "edgehive",
+  "version": "0.1.0",
+  "description": "Edge-native realtime API for Bun, Deno & Firebase",
+  "type": "module",
+  "license": "MIT",
+  "author": "xj16",
+  "keywords": [
+    "hono",
+    "bun",
+    "deno",
+    "firebase",
+    "firestore",
+    "realtime",
+    "edge",
+    "sse",
+    "serverless"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "dev:node": "node --experimental-strip-types entrypoints/node.ts",
+    "start:node": "node --experimental-strip-types entrypoints/node.ts",
+    "dev:bun": "bun run entrypoints/bun.ts",
+    "dev:deno": "deno run --allow-net --allow-env entrypoints/deno.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "smoke": "node --experimental-strip-types scripts/smoke.ts",
+    "demo": "node --experimental-strip-types scripts/demo.ts",
+    "integration": "firebase emulators:exec --only firestore,auth --project edgehive-demo \"node --experimental-strip-types scripts/integration.ts\"",
+    "emulators": "firebase emulators:start --only firestore,auth",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
