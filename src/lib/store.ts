@@ -58,8 +58,10 @@ export class FirestoreStore implements Store {
 
   async healthy(): Promise<boolean> {
     try {
-      // The emulator answers on its root path; a listing round-trips cheaply.
-      await this.client.list("__healthcheck__", 1);
+      // Listing an (empty) collection round-trips cheaply. NOTE: Firestore
+      // reserves identifiers matching /__.*__/, so we must NOT use a name like
+      // "__healthcheck__" here — it returns HTTP 400. "edgehive_health" is safe.
+      await this.client.list("edgehive_health", 1);
       return true;
     } catch {
       return false;

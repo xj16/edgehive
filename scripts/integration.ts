@@ -27,8 +27,9 @@ import { loadConfig } from "../src/core/config.ts";
  * first probe.
  */
 async function waitForEmulator(host: string, projectId: string, attempts = 30): Promise<void> {
+  // Firestore reserves identifiers matching /__.*__/, so use a plain name.
   const url =
-    `http://${host}/v1/projects/${projectId}/databases/(default)/documents/__healthcheck__?pageSize=1`;
+    `http://${host}/v1/projects/${projectId}/databases/(default)/documents/edgehive_health?pageSize=1`;
   for (let i = 1; i <= attempts; i++) {
     try {
       const res = await fetch(url, { headers: { authorization: "Bearer owner" } });
