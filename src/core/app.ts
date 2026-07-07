@@ -274,9 +274,9 @@ export function createApp(deps: AppDeps): Hono<{ Variables: Variables }> {
       // Initial snapshot: replay the current collection so a fresh subscriber
       // immediately has state instead of waiting for the next mutation.
       try {
-        // Order by document id ascending — the one ordering both stores honour
-        // without needing a specific data field to exist.
-        const snapshot = await store.query(col, { limit: 100, orderBy: "__name__", direction: "asc" });
+        // Natural order (Firestore returns documents in name order; the memory
+        // store preserves insertion order), capped at 100 for the initial burst.
+        const snapshot = await store.query(col, { limit: 100 });
         await stream.writeSSE({
           event: "snapshot",
           data: JSON.stringify({

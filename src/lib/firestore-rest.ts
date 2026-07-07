@@ -293,21 +293,24 @@ export class FirestoreRest {
   async query(collection: string, opts: QueryOptions): Promise<QueryResult> {
     const limit = clampLimit(opts.limit);
     const offset = decodeOffsetToken(opts.pageToken);
-    const orderField = opts.orderBy ?? "__name__";
     const direction = opts.direction === "asc" ? "ASCENDING" : "DESCENDING";
 
     const structuredQuery: Record<string, unknown> = {
       from: [{ collectionId: collection }],
-      orderBy: [
-        {
-          field: { fieldPath: orderField },
-          direction,
-        },
-      ],
       offset,
       // Over-fetch by one to know if there's a next page.
       limit: limit + 1,
     };
+
+    // Only attach an explicit `orderBy` when the caller asked for one. When no
+    // ordering is requested we omit the clause entirely and Firestore returns
+    // documents in natural (name) order — avoiding a 400 from ordering the
+    // default list by a reserved key combined with an offset.
+    if (opts.orderBy) {
+      structuredQuery.orderBy = [
+        { field: { fieldPath: opts.orderBy }, direction },
+      ];
+    }
 
     if (opts.where && opts.where.length > 0) {
       const filters = opts.where.map((w) => ({

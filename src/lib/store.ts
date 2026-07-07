@@ -141,12 +141,15 @@ export class MemoryStore implements Store {
       );
     }
 
-    // Order. Default to `__name__` (document id) — the one key Firestore can
-    // always order by — and default to descending, matching the Firestore
-    // transport, so both stores return identically-ordered pages.
-    const orderField = opts.orderBy ?? "__name__";
-    const dir = opts.direction === "asc" ? 1 : -1;
-    rows.sort((a, b) => dir * compareValues(sortKey(a, orderField), sortKey(b, orderField)));
+    // Order. Only sort when an explicit `orderBy` is given — mirroring the
+    // Firestore transport, which omits the `orderBy` clause for the default
+    // case and returns documents in natural (name/insertion) order. This keeps
+    // the two stores returning identically-ordered pages.
+    if (opts.orderBy) {
+      const orderField = opts.orderBy;
+      const dir = opts.direction === "asc" ? 1 : -1;
+      rows.sort((a, b) => dir * compareValues(sortKey(a, orderField), sortKey(b, orderField)));
+    }
 
     const page = rows.slice(offset, offset + limit);
     const hasMore = rows.length > offset + limit;
