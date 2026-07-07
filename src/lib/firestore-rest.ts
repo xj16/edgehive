@@ -147,6 +147,39 @@ export interface StoredDoc {
   updateTime?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Query model — a small, storage-agnostic query description that both the
+// Firestore transport (via structuredQuery) and the in-memory store honour
+// identically, keeping the parity guarantee intact.
+// ---------------------------------------------------------------------------
+
+export type WhereOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
+
+export interface WhereClause {
+  field: string;
+  op: WhereOp;
+  value: Json;
+}
+
+export interface QueryOptions {
+  /** Max number of documents to return (1..100). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `nextPageToken`. */
+  pageToken?: string;
+  /** Field to order by. Defaults to `createTime` when a token/limit is used. */
+  orderBy?: string;
+  /** Sort direction. */
+  direction?: "asc" | "desc";
+  /** Simple equality/comparison filters, ANDed together. */
+  where?: WhereClause[];
+}
+
+export interface QueryResult {
+  documents: StoredDoc[];
+  /** Cursor to pass as `pageToken` for the next page, or null when exhausted. */
+  nextPageToken: string | null;
+}
+
 export class FirestoreRestError extends Error {
   readonly status: number;
   readonly body?: unknown;
@@ -247,6 +280,64 @@ export class FirestoreRest {
     return (res.documents ?? []).map((d) => this.toStored(d));
   }
 
+  /**
+   * Run an ordered, filtered, paginated query via the Firestore
+   * `:runQuery` structuredQuery endpoint.
+   *
+   * Paging uses an `offset`-based cursor encoded in `nextPageToken`. Firestore's
+   * REST `runQuery` accepts `offset` + `limit`, which is enough for a stable,
+   * deterministic pager once an explicit `orderBy` is applied. We fetch
+   * `limit + 1` rows to detect whether a further page exists without a second
+   * round-trip.
+   */
+  async query(collection: string, opts: QueryOptions): Promise<QueryResult> {
+    const limit = clampLimit(opts.limit);
+    const offset = decodeOffsetToken(opts.pageToken);
+    const orderField = opts.orderBy ?? "__name__";
+    const direction = opts.direction === "asc" ? "ASCENDING" : "DESCENDING";
+
+    const structuredQuery: Record<string, unknown> = {
+      from: [{ collectionId: collection }],
+      orderBy: [
+        {
+          field: { fieldPath: orderField },
+          direction,
+        },
+      ],
+      offset,
+      // Over-fetch by one to know if there's a next page.
+      limit: limit + 1,
+    };
+
+    if (opts.where && opts.where.length > 0) {
+      const filters = opts.where.map((w) => ({
+        fieldFilter: {
+          field: { fieldPath: w.field },
+          op: FS_OP[w.op],
+          value: toFsValue(w.value),
+        },
+      }));
+      structuredQuery.where =
+        filters.length === 1 ? filters[0] : { compositeFilter: { op: "AND", filters } };
+    }
+
+    const res = (await this.request("POST", ":runQuery", { structuredQuery })) as Array<{
+      document?: FsDocument;
+      readTime?: string;
+    }>;
+
+    const docs = (Array.isArray(res) ? res : [])
+      .filter((row) => row.document)
+      .map((row) => this.toStored(row.document as FsDocument));
+
+    const hasMore = docs.length > limit;
+    const page = hasMore ? docs.slice(0, limit) : docs;
+    return {
+      documents: page,
+      nextPageToken: hasMore ? encodeOffsetToken(offset + limit) : null,
+    };
+  }
+
   /** Delete a document. Idempotent — deleting a missing doc resolves quietly. */
   async delete(collection: string, id: string): Promise<void> {
     try {
@@ -276,4 +367,59 @@ function safeJsonParse(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Query helpers (shared shape with the in-memory store)
+// ---------------------------------------------------------------------------
+
+/** Firestore structuredQuery operator names. */
+const FS_OP: Record<WhereOp, string> = {
+  "==": "EQUAL",
+  "!=": "NOT_EQUAL",
+  "<": "LESS_THAN",
+  "<=": "LESS_THAN_OR_EQUAL",
+  ">": "GREATER_THAN",
+  ">=": "GREATER_THAN_OR_EQUAL",
+};
+
+export const MAX_PAGE_SIZE = 100;
+export const DEFAULT_PAGE_SIZE = 25;
+
+/** Clamp a requested limit into a safe range. */
+export function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_PAGE_SIZE;
+  return Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(limit)));
+}
+
+/** Encode an integer offset into an opaque, URL-safe page token. */
+export function encodeOffsetToken(offset: number): string {
+  return base64UrlEncode(`o:${offset}`);
+}
+
+/** Decode a page token back to an offset. Unknown/invalid tokens mean offset 0. */
+export function decodeOffsetToken(token: string | undefined): number {
+  if (!token) return 0;
+  try {
+    const decoded = base64UrlDecode(token);
+    const m = /^o:(\d+)$/.exec(decoded);
+    if (!m) return 0;
+    const n = Number(m[1]);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function base64UrlEncode(s: string): string {
+  const b64 = typeof btoa === "function"
+    ? btoa(unescape(encodeURIComponent(s)))
+    : Buffer.from(s, "utf-8").toString("base64");
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecode(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  if (typeof atob === "function") return decodeURIComponent(escape(atob(b64)));
+  return Buffer.from(b64, "base64").toString("utf-8");
 }

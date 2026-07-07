@@ -1,6 +1,6 @@
 {
   "name": "edgehive",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Edge-native realtime API for Bun, Deno & Firebase",
   "type": "module",
   "license": "MIT",
@@ -27,8 +27,12 @@
     "dev:bun": "bun run entrypoints/bun.ts",
     "dev:deno": "deno run --allow-net --allow-env entrypoints/deno.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
+    "coverage": "node --experimental-strip-types --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='scripts/**' --test-coverage-exclude='src/core/openapi.ts' --test-coverage-exclude='src/core/assets.ts' --test test/*.test.ts",
+    "coverage:badge": "node --experimental-strip-types scripts/coverage-badge.ts",
     "smoke": "node --experimental-strip-types scripts/smoke.ts",
     "demo": "node --experimental-strip-types scripts/demo.ts",
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "load": "node --experimental-strip-types scripts/load.ts",
     "integration": "firebase emulators:exec --only firestore,auth --project edgehive-demo \"node --experimental-strip-types scripts/integration.ts\"",
     "emulators": "firebase emulators:start --only firestore,auth",
     "lint": "tsc --noEmit"

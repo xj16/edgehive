@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# One-command full stack: EdgeHive + a real Firestore/Auth emulator.
+#
+#   docker compose up                 # EdgeHive against the Firebase emulator
+#   docker compose --profile demo up  # same, pre-seeded with demo data
+#
+# The `emulator` service runs the Firebase Firestore + Auth emulators (needs a
+# JDK, provided by the image) so you get a real Firestore-backed instance with
+# no local Java or firebase-tools install. EdgeHive waits for it to be healthy,
+# then auto-detects it and reports `"store": { "kind": "firestore" }`.
+# ---------------------------------------------------------------------------
+
+services:
+  emulator:
+    build:
+      context: .
+      dockerfile: docker/emulator.Dockerfile
+    environment:
+      GCLOUD_PROJECT: edgehive-demo
+    ports:
+      - "8080:8080" # Firestore
+      - "9099:9099" # Auth
+      - "4000:4000" # Emulator UI
+    healthcheck:
+      # The Firestore REST surface answering (even 4xx) means it's routing.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  edgehive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      emulator:
+        condition: service_healthy
+    environment:
+      PORT: "8787"
+      GCLOUD_PROJECT: edgehive-demo
+      EDGEHIVE_USE_EMULATOR: "true"
+      FIRESTORE_EMULATOR_HOST: "emulator:8080"
+      FIREBASE_AUTH_EMULATOR_HOST: "emulator:9099"
+      # Set a real secret in production; this is a local default.
+      EDGEHIVE_AUTH_SECRET: "compose-dev-secret-change-me"
+    ports:
+      - "8787:8787"
+
+  # Same EdgeHive, but boots pre-populated with realistic demo data.
+  # Enable with: docker compose --profile demo up
+  edgehive-demo:
+    profiles: ["demo"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      emulator:
+        condition: service_healthy
+    environment:
+      PORT: "8787"
+      GCLOUD_PROJECT: edgehive-demo
+      EDGEHIVE_USE_EMULATOR: "true"
+      EDGEHIVE_DEMO: "1"
+      FIRESTORE_EMULATOR_HOST: "emulator:8080"
+      FIREBASE_AUTH_EMULATOR_HOST: "emulator:9099"
+      EDGEHIVE_AUTH_SECRET: "compose-dev-secret-change-me"
+    ports:
+      - "8788:8787"

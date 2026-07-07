@@ -3,140 +3,172 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EdgeHive · realtime demo</title>
+    <title>EdgeHive · realtime client</title>
     <style>
       :root { color-scheme: dark; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         background: #0b0e14;
         color: #cdd6f4;
-        padding: 2rem 1rem;
+        padding: 1.5rem 1rem;
       }
-      main { max-width: 760px; margin: 0 auto; }
-      h1 { font-size: 1.4rem; margin: 0 0 .25rem; color: #f5c542; }
-      p.sub { margin: 0 0 1.5rem; color: #7f849c; }
-      .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-      input, button {
-        font: inherit;
-        padding: .5rem .75rem;
-        border-radius: 6px;
-        border: 1px solid #313244;
-        background: #181825;
-        color: #cdd6f4;
+      main { max-width: 880px; margin: 0 auto; }
+      h1 { font-size: 1.4rem; margin: 0 0 .2rem; color: #f5c542; }
+      .sub { margin: 0 0 1.2rem; color: #7f849c; font-size: .9rem; }
+      .bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+      input, button, select {
+        font: inherit; padding: .5rem .7rem; border-radius: 6px;
+        border: 1px solid #313244; background: #181825; color: #cdd6f4;
       }
-      input { flex: 1; min-width: 140px; }
+      input { min-width: 120px; }
       button { cursor: pointer; background: #f5c542; color: #11111b; border: none; font-weight: 600; }
       button.ghost { background: #181825; color: #cdd6f4; border: 1px solid #313244; }
-      #log {
-        background: #11111b;
-        border: 1px solid #313244;
-        border-radius: 8px;
-        padding: 1rem;
-        min-height: 240px;
-        max-height: 50vh;
-        overflow: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
+      button.mini { padding: .25rem .5rem; font-size: .78rem; }
+      .pill { margin-left: auto; font-size: .8rem; color: #7f849c; display: flex; gap: .4rem; align-items: center; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #6c7086; }
+      .dot.live { background: #a6e3a1; box-shadow: 0 0 8px #a6e3a1; }
+      .dot.err { background: #f38ba8; }
+      .hint {
+        background: #11162080; border: 1px solid #1c2333; border-radius: 8px;
+        padding: .6rem .8rem; font-size: .85rem; color: #9399b2; margin-bottom: 1rem;
       }
-      .ev { margin-bottom: .5rem; }
-      .ev .tag {
-        display: inline-block;
-        padding: 0 .4rem;
-        border-radius: 4px;
-        font-size: .8rem;
-        margin-right: .5rem;
+      .hint b { color: #89b4fa; }
+      table {
+        width: 100%; border-collapse: collapse; background: #0d1119;
+        border: 1px solid #1c2333; border-radius: 10px; overflow: hidden;
       }
-      .created { background: #40a02b33; color: #a6e3a1; }
-      .updated { background: #df8e1d33; color: #f9e2af; }
-      .deleted { background: #d20f3933; color: #f38ba8; }
-      .ready, .heartbeat { background: #1e66f533; color: #89b4fa; }
-      .status { font-size: .85rem; color: #7f849c; margin-left: auto; }
+      th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid #161d2b; font-size: .88rem; vertical-align: top; }
+      th { color: #7f849c; font-weight: 600; }
+      td.id { font-family: ui-monospace, Menlo, Consolas, monospace; color: #89b4fa; font-size: .8rem; }
+      td.data { font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-word; }
+      tr.flash { animation: flash 1s ease; }
+      @keyframes flash { from { background: #f5c54222; } to { background: transparent; } }
+      .empty { color: #6c7086; text-align: center; padding: 2rem; }
+      .count { color: #7f849c; font-size: .82rem; margin: .6rem 0; }
+      .actions { white-space: nowrap; }
     </style>
   </head>
   <body>
     <main>
-      <h1>EdgeHive</h1>
-      <p class="sub">Realtime API demo — same server runs on Bun, Deno &amp; Node.</p>
+      <h1>EdgeHive · live collection</h1>
+      <p class="sub">A live-updating CRUD board over Server-Sent Events. The same server runs on Bun, Deno &amp; Node.</p>
 
-      <div class="row">
+      <div class="bar">
         <input id="base" value="http://localhost:8787" aria-label="Base URL" />
-        <input id="collection" value="messages" aria-label="Collection" />
-        <span class="status" id="conn">disconnected</span>
+        <input id="col" value="messages" aria-label="Collection" />
+        <button id="reconnect" class="ghost">Reconnect</button>
+        <span class="pill"><span id="dot" class="dot"></span><span id="status">connecting…</span></span>
       </div>
 
-      <div class="row">
-        <input id="text" placeholder="type a message and hit Send…" aria-label="Message text" />
-        <button id="send">Send</button>
-        <button id="clear" class="ghost">Clear log</button>
+      <div class="hint">
+        Open <b>this page in a second tab</b> and watch rows you create, edit or delete appear
+        instantly in both — that is the realtime SSE layer fanning out to every subscriber.
       </div>
 
-      <div id="log" aria-live="polite"></div>
+      <div class="bar">
+        <input id="field" value="text" aria-label="Field name" style="max-width:130px" />
+        <input id="value" placeholder="value…" aria-label="Value" />
+        <button id="create">Create</button>
+        <button id="clear" class="ghost">Clear view</button>
+      </div>
+
+      <div class="count" id="count"></div>
+      <table>
+        <thead><tr><th style="width:24%">id</th><th>data</th><th style="width:150px">actions</th></tr></thead>
+        <tbody id="rows"><tr><td class="empty" colspan="3">No documents yet — create one above.</td></tr></tbody>
+      </table>
     </main>
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const log = $("log");
-      let token = null;
-      let es = null;
+      const state = new Map();
+      let token = null, es = null;
+      const baseUrl = () => ($("base").value || location.origin).replace(/\/$/, "");
+      const col = () => ($("col").value.trim() || "messages");
 
-      function line(kind, msg) {
-        const div = document.createElement("div");
-        div.className = "ev";
-        div.innerHTML = `<span class="tag ${kind}">${kind}</span>${msg}`;
-        log.prepend(div);
-      }
+      function setStatus(s, cls) { $("status").textContent = s; $("dot").className = "dot" + (cls ? " " + cls : ""); }
 
-      async function ensureToken(base) {
+      async function ensureToken() {
         if (token) return token;
-        const res = await fetch(base + "/auth/login", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
+        const r = await fetch(baseUrl() + "/auth/login", {
+          method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ email: "browser@edgehive.dev" }),
         });
-        token = (await res.json()).token;
-        line("ready", "authenticated as browser@edgehive.dev");
+        token = (await r.json()).token;
         return token;
+      }
+
+      function render(flashId) {
+        const rows = $("rows");
+        const docs = [...state.values()].sort((a, b) => (a.createTime || "").localeCompare(b.createTime || ""));
+        $("count").textContent = docs.length + " document" + (docs.length === 1 ? "" : "s") + " · " + col();
+        if (!docs.length) { rows.innerHTML = '<tr><td class="empty" colspan="3">No documents yet — create one above.</td></tr>'; return; }
+        rows.innerHTML = "";
+        for (const d of docs) {
+          const tr = document.createElement("tr");
+          if (d.id === flashId) tr.className = "flash";
+          const idc = document.createElement("td"); idc.className = "id"; idc.textContent = d.id;
+          const data = document.createElement("td"); data.className = "data"; data.textContent = JSON.stringify(d.data);
+          const act = document.createElement("td"); act.className = "actions";
+          const edit = document.createElement("button"); edit.className = "mini ghost"; edit.textContent = "edit"; edit.onclick = () => editDoc(d);
+          const del = document.createElement("button"); del.className = "mini ghost"; del.textContent = "delete"; del.style.marginLeft = ".4rem"; del.onclick = () => deleteDoc(d.id);
+          act.appendChild(edit); act.appendChild(del);
+          tr.appendChild(idc); tr.appendChild(data); tr.appendChild(act); rows.appendChild(tr);
+        }
       }
 
       function connect() {
         if (es) es.close();
-        const base = $("base").value.replace(/\/$/, "");
-        const col = $("collection").value.trim() || "messages";
-        es = new EventSource(`${base}/v1/${col}/stream`);
-        $("conn").textContent = "connecting…";
-
-        es.addEventListener("ready", () => { $("conn").textContent = "live"; line("ready", "stream open for " + col); });
-        es.addEventListener("heartbeat", () => { $("conn").textContent = "live"; });
-        for (const type of ["created", "updated", "deleted"]) {
-          es.addEventListener(type, (e) => {
-            const data = JSON.parse(e.data);
-            line(type, `${data.id} ${data.data ? JSON.stringify(data.data) : ""}`);
-          });
-        }
-        es.onerror = () => { $("conn").textContent = "reconnecting…"; };
+        state.clear(); render();
+        setStatus("connecting…");
+        es = new EventSource(baseUrl() + "/v1/" + col() + "/stream");
+        es.addEventListener("ready", () => setStatus("live", "live"));
+        es.addEventListener("heartbeat", () => setStatus("live", "live"));
+        es.addEventListener("snapshot", (e) => {
+          const snap = JSON.parse(e.data); state.clear();
+          for (const d of snap.documents) state.set(d.id, d);
+          render(); setStatus("live", "live");
+        });
+        es.addEventListener("created", (e) => { const d = JSON.parse(e.data); state.set(d.id, { id: d.id, data: d.data, createTime: new Date(d.ts).toISOString() }); render(d.id); });
+        es.addEventListener("updated", (e) => { const d = JSON.parse(e.data); const p = state.get(d.id) || {}; state.set(d.id, { id: d.id, data: d.data, createTime: p.createTime }); render(d.id); });
+        es.addEventListener("deleted", (e) => { const d = JSON.parse(e.data); state.delete(d.id); render(); });
+        es.onerror = () => setStatus("reconnecting…", "err");
       }
 
-      $("send").addEventListener("click", async () => {
-        const base = $("base").value.replace(/\/$/, "");
-        const col = $("collection").value.trim() || "messages";
-        const text = $("text").value.trim();
-        if (!text) return;
-        await ensureToken(base);
-        await fetch(`${base}/v1/${col}`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: "Bearer " + token },
-          body: JSON.stringify({ text, at: Date.now() }),
+      async function createDoc() {
+        const f = $("field").value.trim() || "text";
+        const v = $("value").value;
+        if (!v) return;
+        await ensureToken();
+        let parsed = v; try { parsed = JSON.parse(v); } catch {}
+        await fetch(baseUrl() + "/v1/" + col(), {
+          method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token },
+          body: JSON.stringify({ [f]: parsed, at: Date.now() }),
         });
-        $("text").value = "";
-      });
+        $("value").value = "";
+      }
+      async function editDoc(d) {
+        const next = prompt("Edit JSON for " + d.id, JSON.stringify(d.data));
+        if (next === null) return;
+        let body; try { body = JSON.parse(next); } catch { alert("Invalid JSON"); return; }
+        await ensureToken();
+        await fetch(baseUrl() + "/v1/" + col() + "/" + d.id, {
+          method: "PUT", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: JSON.stringify(body),
+        });
+      }
+      async function deleteDoc(id) {
+        await ensureToken();
+        await fetch(baseUrl() + "/v1/" + col() + "/" + id, { method: "DELETE", headers: { authorization: "Bearer " + token } });
+      }
 
-      $("text").addEventListener("keydown", (e) => { if (e.key === "Enter") $("send").click(); });
-      $("clear").addEventListener("click", () => (log.innerHTML = ""));
-      $("base").addEventListener("change", connect);
-      $("collection").addEventListener("change", connect);
-
+      $("create").onclick = createDoc;
+      $("value").addEventListener("keydown", (e) => { if (e.key === "Enter") createDoc(); });
+      $("clear").onclick = () => { state.clear(); render(); };
+      $("reconnect").onclick = connect;
+      $("col").addEventListener("change", connect);
+      $("base").addEventListener("change", () => { token = null; connect(); });
       connect();
     </script>
   </body>

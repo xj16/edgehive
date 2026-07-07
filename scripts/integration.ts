@@ -116,6 +116,45 @@ async function main(): Promise<void> {
     const list = (await listRes.json()) as { count: number };
     assert.ok(list.count >= 1, "list contains the created doc");
 
+    // Query path against REAL Firestore: seed a few more, then exercise
+    // ordering + filtering + pagination through the :runQuery structuredQuery
+    // endpoint (this is the only place the Firestore query transport runs).
+    for (const n of [1, 2, 3, 4, 5]) {
+      const r = await fetch(`${base}/v1/ci_query`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ n, even: n % 2 === 0 }),
+      });
+      assert.equal(r.status, 201);
+    }
+    const orderedRes = await fetch(`${base}/v1/ci_query?orderBy=n&direction=asc&limit=2`);
+    const ordered = (await orderedRes.json()) as {
+      documents: Array<{ data: { n: number } }>;
+      nextPageToken: string | null;
+    };
+    assert.equal(ordered.documents.length, 2, "limit is honoured");
+    assert.deepEqual(
+      ordered.documents.map((d) => d.data.n),
+      [1, 2],
+      "Firestore query orders ascending by n",
+    );
+    assert.ok(ordered.nextPageToken, "Firestore query returns a next page token");
+
+    const page2Res = await fetch(
+      `${base}/v1/ci_query?orderBy=n&direction=asc&limit=2&pageToken=${ordered.nextPageToken}`,
+    );
+    const page2 = (await page2Res.json()) as { documents: Array<{ data: { n: number } }> };
+    assert.deepEqual(page2.documents.map((d) => d.data.n), [3, 4], "pageToken advances the cursor");
+
+    const filteredRes = await fetch(`${base}/v1/ci_query?where=even==true&limit=10`);
+    const filtered = (await filteredRes.json()) as { documents: Array<{ data: { even: boolean } }> };
+    assert.ok(filtered.documents.length >= 2, "where filter returns the even docs");
+    assert.ok(
+      filtered.documents.every((d) => d.data.even === true),
+      "every filtered doc matches the predicate",
+    );
+    console.log("[integration] Firestore query (order/filter/paginate) OK");
+
     // Delete
     const delRes = await fetch(`${base}/v1/ci_todos/${created.id}`, {
       method: "DELETE",

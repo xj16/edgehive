@@ -12,6 +12,7 @@
 import { createApp } from "../src/core/app.ts";
 import { Broadcaster } from "../src/lib/broadcaster.ts";
 import { MemoryStore, type Store } from "../src/lib/store.ts";
+import type { EdgeHiveConfig } from "../src/core/config.ts";
 
 export interface TestHarness {
   app: ReturnType<typeof createApp>;
@@ -23,9 +24,33 @@ export interface TestHarness {
 
 const BASE = "http://edgehive.test";
 
-export function makeHarness(store: Store = new MemoryStore()): TestHarness {
+/** A permissive default config so tests aren't throttled unless they opt in. */
+export function testConfig(overrides: Partial<EdgeHiveConfig> = {}): EdgeHiveConfig {
+  return {
+    port: 0,
+    projectId: "edgehive-test",
+    firestoreEmulatorHost: "127.0.0.1:8080",
+    authEmulatorHost: "127.0.0.1:9099",
+    authSecret: "test-secret",
+    useEmulator: false,
+    corsOrigins: ["*"],
+    maxBodyBytes: 64 * 1024,
+    writeRatePerSec: 100000,
+    writeBurst: 100000,
+    loginRatePerMin: 100000,
+    maxSsePerIp: 100000,
+    requireAuthForReads: false,
+    demoMode: false,
+    ...overrides,
+  };
+}
+
+export function makeHarness(
+  store: Store = new MemoryStore(),
+  config?: Partial<EdgeHiveConfig>,
+): TestHarness {
   const broadcaster = new Broadcaster();
-  const app = createApp({ store, broadcaster });
+  const app = createApp({ store, broadcaster, config: testConfig(config) });
 
   const request = (path: string, init?: RequestInit): Promise<Response> =>
     Promise.resolve(app.fetch(new Request(`${BASE}${path}`, init)));

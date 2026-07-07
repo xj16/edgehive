@@ -14,14 +14,24 @@
  * the SSE broadcaster and the parity test suite are all storage-agnostic.
  */
 
-import type { Json, StoredDoc } from "./firestore-rest.ts";
-import { FirestoreRest } from "./firestore-rest.ts";
+import type { Json, StoredDoc, QueryOptions, QueryResult } from "./firestore-rest.ts";
+import {
+  FirestoreRest,
+  clampLimit,
+  encodeOffsetToken,
+  decodeOffsetToken,
+} from "./firestore-rest.ts";
 
 export interface Store {
   readonly kind: "firestore" | "memory";
   create(collection: string, data: Record<string, Json>): Promise<StoredDoc>;
   get(collection: string, id: string): Promise<StoredDoc | null>;
   list(collection: string): Promise<StoredDoc[]>;
+  /**
+   * Ordered, filtered, paginated read. Both stores honour the same
+   * `QueryOptions` so the API behaves identically on Firestore and in memory.
+   */
+  query(collection: string, opts: QueryOptions): Promise<QueryResult>;
   set(collection: string, id: string, data: Record<string, Json>): Promise<StoredDoc>;
   delete(collection: string, id: string): Promise<void>;
   /** True when the underlying backend is reachable. */
@@ -48,6 +58,9 @@ export class FirestoreStore implements Store {
   }
   list(collection: string): Promise<StoredDoc[]> {
     return this.client.list(collection);
+  }
+  query(collection: string, opts: QueryOptions): Promise<QueryResult> {
+    return this.client.query(collection, opts);
   }
   set(collection: string, id: string, data: Record<string, Json>): Promise<StoredDoc> {
     return this.client.set(collection, id, data);
@@ -116,6 +129,33 @@ export class MemoryStore implements Store {
     return [...this.col(collection).values()].map(structuredCloneDoc);
   }
 
+  async query(collection: string, opts: QueryOptions): Promise<QueryResult> {
+    const limit = clampLimit(opts.limit);
+    const offset = decodeOffsetToken(opts.pageToken);
+    let rows = [...this.col(collection).values()].map(structuredCloneDoc);
+
+    // Filter (ANDed clauses).
+    if (opts.where && opts.where.length > 0) {
+      rows = rows.filter((doc) =>
+        opts.where!.every((w) => matchesWhere(pluckField(doc, w.field), w.op, w.value)),
+      );
+    }
+
+    // Order. Default to `__name__` (document id) — the one key Firestore can
+    // always order by — and default to descending, matching the Firestore
+    // transport, so both stores return identically-ordered pages.
+    const orderField = opts.orderBy ?? "__name__";
+    const dir = opts.direction === "asc" ? 1 : -1;
+    rows.sort((a, b) => dir * compareValues(sortKey(a, orderField), sortKey(b, orderField)));
+
+    const page = rows.slice(offset, offset + limit);
+    const hasMore = rows.length > offset + limit;
+    return {
+      documents: page,
+      nextPageToken: hasMore ? encodeOffsetToken(offset + limit) : null,
+    };
+  }
+
   async set(
     collection: string,
     id: string,
@@ -149,6 +189,73 @@ function structuredCloneDoc(doc: StoredDoc): StoredDoc {
     createTime: doc.createTime,
     updateTime: doc.updateTime,
   };
+}
+
+// ---------------------------------------------------------------------------
+// In-memory query helpers — mirror Firestore's ordering/filtering semantics so
+// the two stores return identically-ordered pages for the same query.
+// ---------------------------------------------------------------------------
+
+/** Resolve a `where` field: document metadata keys or a data field. */
+function pluckField(doc: StoredDoc, field: string): Json {
+  if (field === "__name__") return doc.id;
+  if (field === "createTime") return doc.createTime ?? "";
+  if (field === "updateTime") return doc.updateTime ?? "";
+  const v = doc.data[field];
+  return v === undefined ? null : v;
+}
+
+/** Resolve the sort key for ordering; `__name__` sorts by document id. */
+function sortKey(doc: StoredDoc, field: string): Json {
+  return pluckField(doc, field);
+}
+
+/** Total order over the JSON scalar types Firestore supports for ordering. */
+function compareValues(a: Json, b: Json): number {
+  const ra = typeRank(a);
+  const rb = typeRank(b);
+  if (ra !== rb) return ra - rb;
+  switch (ra) {
+    case 1: // number
+      return (a as number) - (b as number);
+    case 2: // string
+      return (a as string) < (b as string) ? -1 : (a as string) > (b as string) ? 1 : 0;
+    case 3: // boolean
+      return (a === b ? 0 : a ? 1 : -1);
+    default:
+      return 0;
+  }
+}
+
+function typeRank(v: Json): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return 1;
+  if (typeof v === "string") return 2;
+  if (typeof v === "boolean") return 3;
+  return 4; // arrays / objects sort last, stably
+}
+
+function matchesWhere(actual: Json, op: string, expected: Json): boolean {
+  switch (op) {
+    case "==":
+      return deepEqualJson(actual, expected);
+    case "!=":
+      return !deepEqualJson(actual, expected);
+    case "<":
+      return compareValues(actual, expected) < 0;
+    case "<=":
+      return compareValues(actual, expected) <= 0;
+    case ">":
+      return compareValues(actual, expected) > 0;
+    case ">=":
+      return compareValues(actual, expected) >= 0;
+    default:
+      return false;
+  }
+}
+
+function deepEqualJson(a: Json, b: Json): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 // ---------------------------------------------------------------------------

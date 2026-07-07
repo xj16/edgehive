@@ -38,6 +38,41 @@ jobs:
         run: npm test
       - name: Runtime smoke test (Node)
         run: node --experimental-strip-types scripts/smoke.ts
+      - name: Realtime fan-out load test (scaled for CI)
+        run: SUBSCRIBERS=100 EVENTS=25 P95_BUDGET_MS=250 node --experimental-strip-types scripts/load.ts
+
+  # ---------------------------------------------------------------------------
+  # Coverage: run the suite with Node's built-in coverage, print the summary,
+  # and (on push to main) regenerate + commit the shields.io coverage badge.
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Coverage report
+        run: npm run coverage
+      - name: Regenerate coverage badge
+        run: npm run coverage:badge
+      - name: Commit badge if it changed (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          if ! git diff --quiet -- .github/badges/coverage.json; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .github/badges/coverage.json
+            git commit -m "ci: update coverage badge [skip ci]"
+            git push
+          else
+            echo "Coverage badge unchanged."
+          fi
 
   # ---------------------------------------------------------------------------
   # Run the exact same parity suite on Deno to prove runtime parity.

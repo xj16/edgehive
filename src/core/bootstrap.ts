@@ -8,6 +8,8 @@ import { createApp, type AppDeps } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { Broadcaster } from "../lib/broadcaster.ts";
 import { createStore } from "../lib/store.ts";
+import { Metrics } from "../lib/metrics.ts";
+import { seedDemoData } from "../lib/seed.ts";
 import { runtimeLabel } from "./runtime.ts";
 
 export interface BuiltApp {
@@ -28,13 +30,27 @@ export async function buildApp(): Promise<BuiltApp> {
     projectId: config.projectId,
   });
   const broadcaster = new Broadcaster();
-  const deps: AppDeps = { store, broadcaster };
+  const metrics = new Metrics();
+  const deps: AppDeps = { store, broadcaster, config, metrics };
   const app = createApp(deps);
 
-  // eslint-disable-next-line no-console
+  // Demo mode: land visitors on an already-populated instance.
+  if (config.demoMode) {
+    const written = await seedDemoData(store);
+    console.log(
+      JSON.stringify({
+        level: "info",
+        ts: new Date().toISOString(),
+        msg: "demo seed",
+        written,
+      }),
+    );
+  }
+
   console.log(
     `[edgehive] runtime=${runtimeLabel()} store=${store.kind} ` +
-      `project=${config.projectId} port=${config.port}`,
+      `project=${config.projectId} port=${config.port} ` +
+      `demo=${config.demoMode} cors=${config.corsOrigins.join("|")}`,
   );
 
   return { app, deps, port: config.port };
